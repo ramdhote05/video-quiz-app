@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Upload a video — LectureRecap{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2 class="chalk" style="margin-top:0;">Upload a lecture video</h2>
+  <p style="color: var(--text-muted); margin-top: -6px;">
+    Drop in a recorded class or training video. We'll transcribe it, pull out
+    the key points, and build a short quiz so you can check what stuck.
+  </p>
+
+  <div id="error-box" style="display:none;" class="error-banner"></div>
+
+  <form id="upload-form">
+    <label for="video-input">
+      <div class="dropzone" id="dropzone">
+        <span class="icon">&#127909;</span>
+        <p>Drag & drop a video here, or click to browse</p>
+        <p style="font-size:12px;">MP4, MOV, MKV, AVI, WEBM — up to 500MB</p>
+        <div class="filename" id="filename-display"></div>
+      </div>
+    </label>
+    <input type="file" id="video-input" name="video" accept="video/*">
+
+    <div class="btn-row">
+      <button type="submit" class="btn" id="submit-btn" disabled>Summarize this video</button>
+    </div>
+  </form>
+
+  <p class="note">
+    Behind the scenes: audio is extracted from your video, transcribed with
+    Whisper, summarized by an LLM, and turned into a multiple-choice quiz —
+    all running on this server.
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('video-input');
+  const filenameDisplay = document.getElementById('filename-display');
+  const submitBtn = document.getElementById('submit-btn');
+  const errorBox = document.getElementById('error-box');
+  const form = document.getElementById('upload-form');
+
+  function showFile(file) {
+    if (!file) return;
+    filenameDisplay.textContent = `${file.name} (${(file.size / (1024*1024)).toFixed(1)} MB)`;
+    submitBtn.disabled = false;
+  }
+
+  fileInput.addEventListener('change', () => showFile(fileInput.files[0]));
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); })
+  );
+  ['dragleave', 'drop'].forEach(evt =>
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); })
+  );
+  dropzone.addEventListener('drop', (e) => {
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      fileInput.files = e.dataTransfer.files;
+      showFile(file);
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!fileInput.files[0]) return;
+
+    errorBox.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Uploading...';
+
+    const formData = new FormData();
+    formData.append('video', fileInput.files[0]);
+
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed.');
+      window.location.href = data.redirect;
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Summarize this video';
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Results — LectureRecap{% endblock %}
+
+{% block content %}
+<div class="card" style="padding-bottom:0;">
+  <h2 class="chalk" style="margin-top:0;">{{ data.original_filename }}</h2>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="summary">Summary</button>
+    <button class="tab-btn" data-tab="transcript">Transcript</button>
+    <button class="tab-btn" data-tab="quiz">Quiz ({{ data.quiz|length }})</button>
+  </div>
+
+  <div class="tab-panel active" id="panel-summary">
+    {% if data.summary.tldr %}
+      <p class="tldr">{{ data.summary.tldr }}</p>
+    {% endif %}
+
+    {% if data.summary.key_topics %}
+      <div style="margin-bottom: 18px;">
+        {% for topic in data.summary.key_topics %}
+          <span class="topic-chip">{{ topic }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <ul class="bullets">
+      {% for b in data.summary.bullets %}
+        <li>{{ b }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="tab-panel" id="panel-transcript" style="max-height: 480px; overflow-y: auto;">
+    {% for seg in data.transcript.segments %}
+      <div class="transcript-line">
+        <span class="ts mono">{{ "%02d:%02d"|format(seg.start // 60, seg.start % 60) }}</span>
+        <span>{{ seg.text }}</span>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="tab-panel" id="panel-quiz" style="padding-bottom: 28px;">
+    {% if data.quiz %}
+      <div id="quiz-root"></div>
+      <div class="btn-row">
+        <button class="btn" id="submit-quiz">Check my answers</button>
+      </div>
+    {% else %}
+      <p style="color: var(--text-muted);">No quiz could be generated for this video.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const jobId = "{{ data.job_id }}";
+  const quiz = {{ data.quiz|tojson }};
+  const selections = {};
+
+  // --- Tabs ---
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // --- Render quiz ---
+  const quizRoot = document.getElementById('quiz-root');
+  quiz.forEach((q, qi) => {
+    const block = document.createElement('div');
+    block.className = 'quiz-question';
+    block.dataset.qi = qi;
+
+    const title = document.createElement('div');
+    title.className = 'q-title';
+    title.textContent = `${qi + 1}. ${q.question}`;
+    block.appendChild(title);
+
+    q.options.forEach((opt, oi) => {
+      const optBtn = document.createElement('button');
+      optBtn.type = 'button';
+      optBtn.className = 'option';
+      optBtn.textContent = opt;
+      optBtn.addEventListener('click', () => {
+        block.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+        optBtn.classList.add('selected');
+        selections[qi] = oi;
+      });
+      block.appendChild(optBtn);
+    });
+
+    const explanation = document.createElement('div');
+    explanation.className = 'explanation';
+    explanation.style.display = 'none';
+    block.appendChild(explanation);
+
+    quizRoot.appendChild(block);
+  });
+
+  // --- Grade ---
+  document.getElementById('submit-quiz').addEventListener('click', async () => {
+    const res = await fetch(`/api/grade-quiz/${jobId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: selections }),
+    });
+    const result = await res.json();
+
+    document.querySelectorAll('.quiz-question').forEach((block, qi) => {
+      const graded = result.graded[qi];
+      const options = block.querySelectorAll('.option');
+      options.forEach(o => o.disabled = true);
+      options[graded.correct_index].classList.add('correct');
+      if (selections[qi] !== undefined && selections[qi] !== graded.correct_index) {
+        options[selections[qi]].classList.add('incorrect');
+      }
+      const explanationEl = block.querySelector('.explanation');
+      if (graded.explanation) {
+        explanationEl.textContent = graded.explanation;
+        explanationEl.style.display = 'block';
+      }
+    });
+
+    let banner = document.getElementById('score-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'score-banner';
+      banner.className = 'score-banner';
+      document.getElementById('panel-quiz').prepend(banner);
+    }
+    banner.innerHTML = `Score: <span>${result.score} / ${result.total}</span>`;
+
+    document.getElementById('submit-quiz').style.display = 'none';
+  });
+</script>
+{% endblock %}

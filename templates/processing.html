@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Processing — LectureRecap{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2 class="chalk" style="margin-top:0;">Working through your video&hellip;</h2>
+  <div id="error-box" {% if not missing_job %}style="display:none;"{% endif %} class="error-banner">
+    {% if missing_job %}
+      This processing job is no longer active. Please upload the video again.
+      <a href="{{ url_for('index') }}">Back to upload</a>
+    {% endif %}
+  </div>
+
+  <ul class="checklist" id="checklist">
+    {% for key, label in stages %}
+    <li data-stage="{{ key }}"><span class="checkbox"></span><span>{{ label }}</span></li>
+    {% endfor %}
+  </ul>
+
+  <p class="processing-note">This can take a few minutes for longer videos — feel free to leave this tab open.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const jobId = "{{ job_id }}";
+  const stageOrder = [{% for key, label in stages %}"{{ key }}",{% endfor %}];
+  const items = document.querySelectorAll('#checklist li');
+  const errorBox = document.getElementById('error-box');
+  const missingJob = {{ "true" if missing_job else "false" }};
+
+  function showError(message) {
+    errorBox.textContent = message + " ";
+    const link = document.createElement('a');
+    link.href = '/';
+    link.textContent = 'Back to upload';
+    errorBox.appendChild(link);
+    errorBox.style.display = 'block';
+  }
+
+  function applyStatus(status) {
+    const idx = stageOrder.indexOf(status);
+    items.forEach((li, i) => {
+      li.classList.remove('active', 'complete');
+      if (i < idx) li.classList.add('complete');
+      else if (i === idx) li.classList.add('active');
+    });
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(`/api/status/${jobId}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || "This processing job is no longer active.");
+        return;
+      }
+
+      if (data.status === 'error') {
+        showError("Something went wrong: " + (data.message || "unknown error"));
+        return;
+      }
+
+      applyStatus(data.status);
+
+      if (data.status === 'done') {
+        window.location.href = `/result/${jobId}`;
+        return;
+      }
+      setTimeout(poll, 2000);
+    } catch (err) {
+      setTimeout(poll, 3000);
+    }
+  }
+
+  applyStatus('uploaded');
+  if (!missingJob) poll();
+</script>
+{% endblock %}

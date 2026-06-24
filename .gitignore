@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
+.venv/
+venv/
+
+.vercel
